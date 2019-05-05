@@ -1,6 +1,8 @@
 ﻿using Serilog;
 using System;
 using System.Configuration;
+using System.Linq;
+using System.ServiceProcess;
 using System.Timers;
 
 namespace Relaunch_Service
@@ -16,21 +18,40 @@ namespace Relaunch_Service
             Console.WriteLine("Sistema iniciado");
             Log.Information("Sistema iniciado");
 
-            // Create a timer
-            var myTimer = new Timer();
-            // Tell the timer what to do when it elapses
-            myTimer.Elapsed += new ElapsedEventHandler(myEvent);
-            // Set it to go off every five seconds
-            myTimer.Interval = Convert.ToDouble(ConfigurationManager.AppSettings["SERVICE_LAUNCH_TIMEGAP"]);
-            // And start it        
-            myTimer.Enabled = true;
-
+            processServices();
         }
 
-        // Implement a call with the right signature for events going off
-        private static void myEvent(object source, ElapsedEventArgs e)
+        private static void processServices()
         {
+            Log.Information("Obteniendo lista de servicios");
 
+            var services = ConfigurationManager.AppSettings["SERVICE_LIST"].Split(";").ToList();
+
+            Log.Information($"{services.Count} servicios a validar");
+
+            foreach(var service in services)
+            {
+                try
+                {
+                    var serviceController = new ServiceController(service, ".");
+
+                    if (serviceController.Status == ServiceControllerStatus.Stopped)
+                    {
+                        serviceController.Start();
+
+                        serviceController.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromMilliseconds(Convert.ToDouble(ConfigurationManager.AppSettings["SERVICE_LAUNCH_TIMEOUT"])));
+
+                        serviceController.Refresh();
+
+                        Log.Information($"Servicio {service} iniciado");
+                    }
+
+                }
+                catch(Exception ex)
+                {
+                    Log.Error(ex, $"Búsqueda y/o ejecución de {service}");
+                }
+            }
         }
     }
 }
